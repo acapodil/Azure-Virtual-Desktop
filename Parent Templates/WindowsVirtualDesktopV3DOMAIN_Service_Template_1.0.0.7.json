@@ -1,0 +1,897 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.7",
+    "parameters": {
+        "wvdObjectLocation": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "The location of the WVD core resources. Currently only available in US regions."
+            }
+        },
+        "workSpaceName": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "The name of the WVD workspace. This will be associated with the default app group."
+            }
+        },
+        "hostpoolName": {
+            "type": "String",
+            "metadata": {
+                "description": "The name of the Hostpool to be created."
+            }
+        },
+        "rdshNamePrefix": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "This prefix will be used in combination with the VM number to create the VM name. If using 'rdsh' as the prefix, VMs would be named 'rdsh-0', 'rdsh-1', etc. You should use a unique prefix to reduce name collisions in Active Directory."
+            }
+        },
+
+        "deployImageVM": {
+            "defaultValue": false,
+            "type": "bool",
+            "allowedValues": [
+                true,
+                false
+            ],
+            "metadata": {
+                "description": "Deploy a partialy configured base-VM to create a golden image for your WVD deployment."
+            }
+        },
+        "rdshGalleryImageSKU": {
+            "type": "string",
+            "allowedValues": [
+                "Windows-10-Enterprise-multi-session-with-Office-365-ProPlus",
+                "Windows-10-Enterprise-multi-session",
+                "2016-Datacenter",
+                "2019-Datacenter"
+            ]
+        },
+        "rdshNumberOfInstances": {
+            "defaultValue": 1,
+            "type": "Int",
+            "metadata": {
+                "description": "Number of session hosts that will be created and added to the hostpool."
+            }
+        },
+        "rdshVmSize": {
+            "type": "string",
+            "metadata": {
+                "description": "The size of the Session Host VMs"
+            },
+            "defaultValue": "Standard_D4as_v4",
+            "allowedValues": [
+                "Standard_B4ms",
+                "Standard_B8ms",
+                "Standard_D2s_v3",
+                "Standard_D4s_v3",
+                "Standard_D8s_v3",
+                "Standard_E2s_v3",
+                "Standard_E4s_v3",
+                "Standard_E8s_v3",
+                "Standard_D2as_v4",
+                "Standard_D4as_v4",
+                "Standard_D8as_v4",
+                "Standard_E2as_v4",
+                "Standard_E4as_v4",
+                "Standard_E8as_v4"
+            ]
+        },
+        "rdshVMDiskType": {
+            "defaultValue": "Standard_LRS",
+            "allowedValues": [
+                "Premium_LRS",
+                "Standard_LRS",
+                "StandardSSD_LRS"
+            ],
+            "type": "String",
+            "metadata": {
+                "description": "The VM disk type for the VM: HDD or SSD."
+            }
+        },
+        "domainToJoin": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "Domain to join"
+            }
+        },
+        "existingDomainUPN": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "A username in the domain that has privileges to join the session hosts to the domain. For example, 'user1@contoso.com'."
+            }
+        },
+        "existingDomainPassword": {
+            "defaultValue": "",
+            "type": "SecureString",
+            "metadata": {
+                "description": "The password that corresponds to the existing domain username."
+            }
+        },
+        "existingVnetName": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "The name of the virtual network the VMs will be connected to."
+            }
+        },
+        "existingSubnetName": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "The subnet the VMs will be placed in."
+            }
+        },
+        "virtualNetworkResourceGroupName": {
+            "defaultValue": "",
+            "type": "String",
+            "metadata": {
+                "description": "The resource group containing the existing virtual network."
+            }
+        },
+        "installTeams": {
+            "type": "bool",
+            "defaultValue": false,
+            "allowedValues": [
+                true,
+                false
+            ]
+        },
+        "deployLogAnalytics": {
+            "type": "bool",
+            "defaultValue": false,
+            "allowedValues": [
+                true,
+                false
+            ],
+            "metadata": {
+                "description": "Deploy a configured monitoring solution for your WVD deployment."
+            }
+        },
+        "currentTime": {
+            "defaultValue": "[utcNow('u')]",
+            "type": "string"
+        }
+
+    },
+    "variables": {
+        "installTeams": "[if(parameters('installTeams'), 'Yes', 'No')]",
+        "artifactsLocation": "https://raw.githubusercontent.com/acapodilupo/WVD_Solution/master/WVD%20v2%20(workspaces)/Atifacts/DSC/Configuration.zip",
+        "apiVersion": "2019-12-10-preview",
+        "createVMs": "[greater(parameters('rdshNumberOfInstances'),0)]",
+        "rdshManagedDisks": "[if(equals(variables('vmImageType'), 'CustomVHD'), variables('vmUseManagedDisks'), bool('true'))]",
+        "rdshPrefix": "[concat(parameters('rdshNamePrefix'),'-')]",
+        "avSetSKU": "[if(variables('rdshManagedDisks'), 'Aligned', 'Classic')]",
+        "existingDomainUsername": "[first(split(parameters('existingDomainUPN'), '@'))]",
+        "vhds": "[concat('vhds','/', variables('rdshPrefix'))]",
+        "subnet-id": "[resourceId(parameters('virtualNetworkResourceGroupName'),'Microsoft.Network/virtualNetworks/subnets',parameters('existingVnetName'), parameters('existingSubnetName'))]",
+
+        "hostpoolName": "[replace(parameters('hostpoolName'),'\"','')]",
+
+        "vmTemplateName": "[concat( if(variables('rdshManagedDisks'), 'managedDisks', 'unmanagedDisks'), '-', toLower(replace(variables('vmImageType'),' ', '')), 'vm')]",
+        "vmTemplateUri": "https://raw.githubusercontent.com/apcapodilupo/WVD_2020/main/Artifacts2021/WVDv3/WVDv3%20Refactor/Standard/sessionHostDOMAIN.json",
+        "rdshVmNamesOutput": {
+            "copy": [
+                {
+                    "name": "rdshVmNamesCopy",
+                    "count": "[parameters('rdshNumberOfInstances')]",
+                    "input": {
+                        "name": "[concat(variables('rdshPrefix'),copyIndex('rdshVmNamesCopy'))]"
+                    }
+                }
+            ]
+        },
+        "location": "[resourceGroup().location]",
+        "appGroupName": "[concat(variables('hostpoolName'),'-DAG')]",
+        "appGroupResourceId": "[createArray(resourceId('Microsoft.DesktopVirtualization/applicationgroups/', variables('appGroupName')))]",
+        "workspaceResourceGroup": "[if(empty(variables('resourceGroup')), variables('resourceGroup'), variables('resourceGroup'))]",
+        "applicationGroupReferencesArr": "[if(equals('',variables('allApplicationGroupReferences')), variables('appGroupResourceId'), concat(split(variables('allApplicationGroupReferences'),','), variables('appGroupResourceId')))]",
+        "hostpoolDescription": "The WVD Hostpool.",
+        "vmUseManagedDisks": true,
+        "resourceGroup": "[resourceGroup().name]",
+        "allApplicationGroupReferences": "",
+        "createAvailabilitySet": true,
+        "addToWorkspace": true,
+        "vmGalleryImageOfferBasic": "Windows-10",
+        "vmGalleryImageSKUBasic": "20h2-evd",
+        "vmGalleryImageOffer": "office-365",
+        "vmImageType": "Gallery",
+        "vmGalleryImagePublisher": "MicrosoftWindowsDesktop",
+        "vmGalleryImageSKU": "20h2-evd-o365pp",
+        "vmGalleryImageOfferServer": "WindowsServer",
+        "vmGalleryImageSKU2016": "2016-Datacenter",
+        "vmGalleryImageSKU2019": "2019-Datacenter",
+        "vmGalleryImagePublisherServer": "MicrosoftWindowsServer",
+        "vmImageVhdUri": "",
+        "vmCustomImageSourceId": "",
+        "storageAccountResourceGroupName": "",
+        "usePublicIP": false,
+        "publicIpAddressSku": "Basic",
+        "publicIpAddressType": "Dynamic",
+        "createNetworkSecurityGroup": false,
+        "networkSecurityGroupId": "",
+        "networkSecurityGroupRules": [
+        ],
+        "hostpoolType": "Pooled",
+        "personalDesktopAssignmentType": "Automatic",
+        "maxSessionLimit": 20,
+        "loadBalancerType": "BreadthFirst",
+        "customRdpProperty": "audiocapturemode:i:1;camerastoredirect:s:*",
+        "tokenExpirationTime": "[dateTimeAdd(parameters('currentTime'), 'P9D')]",
+        "hostpoolTags": {
+        },
+        "applicationGroupTags": {
+        },
+        "availabilitySetTags": {
+        },
+        "networkInterfaceTags": {
+        },
+        "networkSecurityGroupTags": {
+        },
+        "publicIPAddressTags": {
+        },
+        "virtualMachineTags": {
+        },
+        "imageTags": {
+        },
+        "deploymentId": "[guid(resourceGroup().id, deployment().name)]",
+        "validationEnviroment": false,
+        "ouPath": "",
+        "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'users')]",
+        "fileShareName": "userprofiles",
+        "subscriptionID": "[subscription().subscriptionId]",
+        "resourceGroupName": "[resourceGroup().name]",
+        "scope": "[concat('/subscriptions/',variables('subscriptionID'), '/resourceGroups/',variables('ResourceGroupName'),'/providers/Microsoft.Storage/storageAccounts/',variables('storageAccountName'),'/fileServices/default/fileshares/userprofiles')]",
+        "roleDefinitionId": "[concat('/subscriptions/',variables('subscriptionID'),'/providers/Microsoft.Authorization/roleDefinitions/0c867c2a-1d8c-454a-a3db-ab2ea1bdc8bb')]",
+        "roleDefName": "[guid(subscription().id)]",
+        "accessTier": "Hot",
+        "minimumTlsVersion": "TLS1_0",
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": true,
+        "networkAclsBypass": "AzureServices",
+        "networkAclsDefaultAction": "Deny",
+        "vnetID": "[concat('/subscriptions/',variables('subscriptionID'),'/resourceGroups/',parameters('virtualNetworkResourceGroupName'),'/providers/Microsoft.Network/virtualNetworks/',parameters('existingVnetName'),'/subnets/',parameters('existingSubnetName'))]",
+        "networkAclsVirtualNetworkRules": [
+            {
+                "id": "[variables('vnetID')]"
+            }
+        ],
+        "LogAnalyticsTemplateUri": "https://raw.githubusercontent.com/apcapodilupo/WVD_2020/main/Artifacts2021/LogAnalytics/logAnalyticsConfig.json"
+
+
+
+
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "name": "[variables('storageAccountName')]",
+            "location": "[variables('location')]",
+            "kind": "FileStorage",
+            "sku": {
+                "name": "Premium_LRS"
+            },
+            "properties": {
+                "accessTier": "[variables('accessTier')]",
+                "minimumTlsVersion": "[variables('minimumTlsVersion')]",
+                "supportsHttpsTrafficOnly": "[variables('supportsHttpsTrafficOnly')]",
+                "allowBlobPublicAccess": "[variables('allowBlobPublicAccess')]",
+                "networkAcls": {
+                    "bypass": "[variables('networkAclsBypass')]",
+                    "defaultAction": "[variables('networkAclsDefaultAction')]",
+                    "ipRules": [],
+                    "virtualNetworkRules": "[variables('networkAclsVirtualNetworkRules')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+            "apiVersion": "2019-06-01",
+            "name": "[concat(variables('storageAccountName'), '/default/', variables('fileShareName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+            ],
+            "properties": {
+                "shareQuota": 150
+            }
+        },
+        {
+            "type": "Microsoft.DesktopVirtualization/hostpools",
+            "apiVersion": "[variables('apiVersion')]",
+            "name": "[parameters('hostpoolName')]",
+            "location": "[parameters('wvdObjectLocation')]",
+            "tags": "[variables('hostpoolTags')]",
+            "properties": {
+                "friendlyName": "WVD Hostpool",
+                "description": "[variables('hostpoolDescription')]",
+                "hostpoolType": "[variables('hostpoolType')]",
+                "customRdpProperty": "[variables('customRdpProperty')]",
+                "personalDesktopAssignmentType": "[variables('personalDesktopAssignmentType')]",
+                "maxSessionLimit": "[variables('maxSessionLimit')]",
+                "loadBalancerType": "[variables('loadBalancerType')]",
+                "validationEnviroment": "[variables('validationEnviroment')]",
+                "ring": null,
+                "registrationInfo": {
+                    "expirationTime": "[variables('tokenExpirationTime')]",
+                    "token": null,
+                    "registrationTokenOperation": "Update"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.DesktopVirtualization/applicationgroups",
+            "apiVersion": "[variables('apiVersion')]",
+            "name": "[variables('appGroupName')]",
+            "location": "[parameters('wvdObjectLocation')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.DesktopVirtualization/hostpools/', parameters('hostpoolName'))]"
+            ],
+            "tags": "[variables('applicationGroupTags')]",
+            "properties": {
+                "hostpoolarmpath": "[resourceId('Microsoft.DesktopVirtualization/hostpools/', parameters('hostpoolName'))]",
+                "friendlyName": "Default Desktop",
+                "description": "Desktop Application Group created through Azure Resource Manager",
+                "applicationGroupType": "Desktop"
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "name": "[concat('Workspace-linkedTemplate-', variables('deploymentId'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.DesktopVirtualization/applicationgroups/', variables('appGroupName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "apiVersion": "[variables('apiVersion')]",
+                            "name": "[parameters('workSpaceName')]",
+                            "type": "Microsoft.DesktopVirtualization/workspaces",
+                            "location": "[parameters('wvdObjectLocation')]",
+                            "properties": {
+                                "applicationGroupReferences": "[variables('applicationGroupReferencesArr')]"
+                            }
+                        }
+                    ]
+                }
+            },
+            "resourceGroup": "[variables('workspaceResourceGroup')]",
+            "condition": "[variables('addToWorkspace')]"
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "name": "[concat('AVSet-linkedTemplate-', variables('deploymentId'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.DesktopVirtualization/applicationgroups', variables('appGroupName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "apiVersion": "2018-10-01",
+                            "type": "Microsoft.Compute/availabilitySets",
+                            "name": "[concat(variables('rdshPrefix'), 'availabilitySet-', variables('location'))]",
+                            "location": "[variables('location')]",
+                            "tags": "[variables('availabilitySetTags')]",
+                            "properties": {
+                                "platformUpdateDomainCount": 5,
+                                "platformFaultDomainCount": 2
+                            },
+                            "sku": {
+                                "name": "[variables('avSetSKU')]"
+                            }
+                        }
+                    ]
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]",
+            "condition": "[variables('createAvailabilitySet')]"
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "name": "[concat('linkedTemplate-O365PP-', variables('deploymentId'))]",
+            "condition": "[equals(parameters('rdshGalleryImageSKU'), 'Windows-10-Enterprise-multi-session-with-Office-365-ProPlus'  ) ]",
+            "dependsOn": [
+                "[concat('AVSet-linkedTemplate-', variables('deploymentId'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vmTemplateUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vmGalleryImageOffer": {
+                        "value": "[variables('vmGalleryImageOffer')]"
+                    },
+                    "vmGalleryImagePublisher": {
+                        "value": "[variables('vmGalleryImagePublisher')]"
+                    },
+                    "vmGalleryImageSKU": {
+                        "value": "[variables('vmGalleryImageSKU')]"
+                    },
+                    "rdshPrefix": {
+                        "value": "[variables('rdshPrefix')]"
+                    },
+                    "deployImageVM": {
+                        "value": "[parameters('deployImageVM')]"
+                    },
+                    "rdshNumberOfInstances": {
+                        "value": "[parameters('rdshNumberOfInstances')]"
+                    },
+                    "rdshVMDiskType": {
+                        "value": "[parameters('rdshvmDiskType')]"
+                    },
+                    "rdshVmSize": {
+                        "value": "[parameters('rdshvmSize')]"
+                    },
+                    "enableAcceleratedNetworking": {
+                        "value": false
+                    },
+                    "administratorAccountUsername": {
+                        "value": "[parameters('existingDomainUPN')]"
+                    },
+                    "administratorAccountPassword": {
+                        "value": "[parameters('existingDomainPassword')]"
+                    },
+                    "subnet-id": {
+                        "value": "[variables('subnet-id')]"
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    },
+                    "usePublicIP": {
+                        "value": "[variables('usePublicIP')]"
+                    },
+                    "publicIpAddressType": {
+                        "value": "[variables('publicIpAddressType')]"
+                    },
+                    "publicIpAddressSku": {
+                        "value": "[variables('publicIpAddressSku')]"
+                    },
+                    "createNetworkSecurityGroup": {
+                        "value": "[variables('createNetworkSecurityGroup')]"
+                    },
+                    "networkSecurityGroupId": {
+                        "value": "[variables('networkSecurityGroupId')]"
+                    },
+                    "networkSecurityGroupRules": {
+                        "value": "[variables('networkSecurityGroupRules')]"
+                    },
+                    "networkInterfaceTags": {
+                        "value": "[variables('networkInterfaceTags')]"
+                    },
+                    "networkSecurityGroupTags": {
+                        "value": "[variables('networkSecurityGroupTags')]"
+                    },
+                    "publicIPAddressTags": {
+                        "value": "[variables('publicIPAddressTags')]"
+                    },
+                    "virtualMachineTags": {
+                        "value": "[variables('virtualMachineTags')]"
+                    },
+                    "imageTags": {
+                        "value": "[variables('imageTags')]"
+                    },
+                    "hostpoolToken": {
+                        "value": "[reference(parameters('hostpoolName')).registrationInfo.token]"
+                    },
+                    "hostpoolName": {
+                        "value": "[parameters('hostpoolName')]"
+                    },
+                    "domain": {
+                        "value": "[parameters('domainToJoin')]"
+                    },
+                    "ouPath": {
+                        "value": "[variables('ouPath')]"
+                    },
+                    "_guidValue": {
+                        "value": "[variables('deploymentId')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[variables('storageAccountName')]"
+                    },
+                    "installTeams": {
+                        "value": "[variables('installTeams')]"
+                    }
+
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]"
+
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "condition": "[equals(parameters('rdshGalleryImageSKU'), 'Windows-10-Enterprise-multi-session' )]",
+            "name": "[concat('linkedTemplate-', variables('deploymentId'))]",
+            "dependsOn": [
+                "[concat('AVSet-linkedTemplate-', variables('deploymentId'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vmTemplateUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vmGalleryImageOffer": {
+                        "value": "[variables('vmGalleryImageOfferBasic')]"
+                    },
+                    "vmGalleryImagePublisher": {
+                        "value": "[variables('vmGalleryImagePublisher')]"
+                    },
+                    "vmGalleryImageSKU": {
+                        "value": "[variables('vmGalleryImageSKUBasic')]"
+                    },
+                    "rdshPrefix": {
+                        "value": "[variables('rdshPrefix')]"
+                    },
+                    "deployImageVM": {
+                        "value": "[parameters('deployImageVM')]"
+                    },
+                    "rdshNumberOfInstances": {
+                        "value": "[parameters('rdshNumberOfInstances')]"
+                    },
+                    "rdshVMDiskType": {
+                        "value": "[parameters('rdshVMDiskType')]"
+                    },
+                    "rdshVmSize": {
+                        "value": "[parameters('rdshVmSize')]"
+                    },
+                    "enableAcceleratedNetworking": {
+                        "value": false
+                    },
+                    "administratorAccountUsername": {
+                        "value": "[parameters('existingDomainUPN')]"
+                    },
+                    "administratorAccountPassword": {
+                        "value": "[parameters('existingDomainPassword')]"
+                    },
+                    "subnet-id": {
+                        "value": "[variables('subnet-id')]"
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    },
+                    "usePublicIP": {
+                        "value": "[variables('usePublicIP')]"
+                    },
+                    "publicIpAddressType": {
+                        "value": "[variables('publicIpAddressType')]"
+                    },
+                    "publicIpAddressSku": {
+                        "value": "[variables('publicIpAddressSku')]"
+                    },
+                    "createNetworkSecurityGroup": {
+                        "value": "[variables('createNetworkSecurityGroup')]"
+                    },
+                    "networkSecurityGroupId": {
+                        "value": "[variables('networkSecurityGroupId')]"
+                    },
+                    "networkSecurityGroupRules": {
+                        "value": "[variables('networkSecurityGroupRules')]"
+                    },
+                    "networkInterfaceTags": {
+                        "value": "[variables('networkInterfaceTags')]"
+                    },
+                    "networkSecurityGroupTags": {
+                        "value": "[variables('networkSecurityGroupTags')]"
+                    },
+                    "publicIPAddressTags": {
+                        "value": "[variables('publicIPAddressTags')]"
+                    },
+                    "virtualMachineTags": {
+                        "value": "[variables('virtualMachineTags')]"
+                    },
+                    "imageTags": {
+                        "value": "[variables('imageTags')]"
+                    },
+                    "hostpoolToken": {
+                        "value": "[reference(parameters('hostpoolName')).registrationInfo.token]"
+                    },
+                    "hostpoolName": {
+                        "value": "[parameters('hostpoolName')]"
+                    },
+                    "domain": {
+                        "value": "[parameters('domainToJoin')]"
+                    },
+                    "ouPath": {
+                        "value": "[variables('ouPath')]"
+                    },
+                    "_guidValue": {
+                        "value": "[variables('deploymentId')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[variables('storageAccountName')]"
+                    },
+                    "installTeams": {
+                        "value": "[variables('installTeams')]"
+                    }
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]"
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "condition": "[equals(parameters('rdshGalleryImageSKU'), '2016-Datacenter' )]",
+            "name": "[concat('linkedTemplate-Server2016AD', variables('deploymentId'))]",
+            "dependsOn": [
+                "[concat('AVSet-linkedTemplate-', variables('deploymentId'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vmTemplateUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vmGalleryImageOffer": {
+                        "value": "[variables('vmGalleryImageOfferServer')]"
+                    },
+                    "vmGalleryImagePublisher": {
+                        "value": "[variables('vmGalleryImagePublisherServer')]"
+                    },
+                    "vmGalleryImageSKU": {
+                        "value": "[variables('vmGalleryImageSKU2016')]"
+                    },
+                    "rdshPrefix": {
+                        "value": "[variables('rdshPrefix')]"
+                    },
+                    "deployImageVM": {
+                        "value": "[parameters('deployImageVM')]"
+                    },
+                    "rdshNumberOfInstances": {
+                        "value": "[parameters('rdshNumberOfInstances')]"
+                    },
+                    "rdshVMDiskType": {
+                        "value": "[parameters('rdshVMDiskType')]"
+                    },
+                    "rdshVmSize": {
+                        "value": "[parameters('rdshVmSize')]"
+                    },
+                    "enableAcceleratedNetworking": {
+                        "value": false
+                    },
+                    "administratorAccountUsername": {
+                        "value": "[parameters('existingDomainUPN')]"
+                    },
+                    "administratorAccountPassword": {
+                        "value": "[parameters('existingDomainPassword')]"
+                    },
+                    "subnet-id": {
+                        "value": "[variables('subnet-id')]"
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    },
+                    "usePublicIP": {
+                        "value": "[variables('usePublicIP')]"
+                    },
+                    "publicIpAddressType": {
+                        "value": "[variables('publicIpAddressType')]"
+                    },
+                    "publicIpAddressSku": {
+                        "value": "[variables('publicIpAddressSku')]"
+                    },
+                    "createNetworkSecurityGroup": {
+                        "value": "[variables('createNetworkSecurityGroup')]"
+                    },
+                    "networkSecurityGroupId": {
+                        "value": "[variables('networkSecurityGroupId')]"
+                    },
+                    "networkSecurityGroupRules": {
+                        "value": "[variables('networkSecurityGroupRules')]"
+                    },
+                    "networkInterfaceTags": {
+                        "value": "[variables('networkInterfaceTags')]"
+                    },
+                    "networkSecurityGroupTags": {
+                        "value": "[variables('networkSecurityGroupTags')]"
+                    },
+                    "publicIPAddressTags": {
+                        "value": "[variables('publicIPAddressTags')]"
+                    },
+                    "virtualMachineTags": {
+                        "value": "[variables('virtualMachineTags')]"
+                    },
+                    "imageTags": {
+                        "value": "[variables('imageTags')]"
+                    },
+                    "hostpoolToken": {
+                        "value": "[reference(parameters('hostpoolName')).registrationInfo.token]"
+                    },
+                    "hostpoolName": {
+                        "value": "[parameters('hostpoolName')]"
+                    },
+                    "domain": {
+                        "value": "[parameters('domainToJoin')]"
+                    },
+                    "ouPath": {
+                        "value": "[variables('ouPath')]"
+                    },
+                    "_guidValue": {
+                        "value": "[variables('deploymentId')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[variables('storageAccountName')]"
+                    },
+
+                    "installTeams": {
+                        "value": "[variables('installTeams')]"
+                    }
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]"
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "condition": "[equals(parameters('rdshGalleryImageSKU'), '2019-Datacenter' )]",
+            "name": "[concat('linkedTemplate-Server2019AD', variables('deploymentId'))]",
+            "dependsOn": [
+                "[concat('AVSet-linkedTemplate-', variables('deploymentId'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('vmTemplateUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "vmGalleryImageOffer": {
+                        "value": "[variables('vmGalleryImageOfferServer')]"
+                    },
+                    "vmGalleryImagePublisher": {
+                        "value": "[variables('vmGalleryImagePublisherServer')]"
+                    },
+                    "vmGalleryImageSKU": {
+                        "value": "[variables('vmGalleryImageSKU2019')]"
+                    },
+                    "rdshPrefix": {
+                        "value": "[variables('rdshPrefix')]"
+                    },
+                    "deployImageVM": {
+                        "value": "[parameters('deployImageVM')]"
+                    },
+                    "rdshNumberOfInstances": {
+                        "value": "[parameters('rdshNumberOfInstances')]"
+                    },
+                    "rdshVMDiskType": {
+                        "value": "[parameters('rdshVMDiskType')]"
+                    },
+                    "rdshVmSize": {
+                        "value": "[parameters('rdshVmSize')]"
+                    },
+                    "enableAcceleratedNetworking": {
+                        "value": false
+                    },
+                    "administratorAccountUsername": {
+                        "value": "[parameters('existingDomainUPN')]"
+                    },
+                    "administratorAccountPassword": {
+                        "value": "[parameters('existingDomainPassword')]"
+                    },
+                    "subnet-id": {
+                        "value": "[variables('subnet-id')]"
+                    },
+                    "location": {
+                        "value": "[variables('location')]"
+                    },
+                    "usePublicIP": {
+                        "value": "[variables('usePublicIP')]"
+                    },
+                    "publicIpAddressType": {
+                        "value": "[variables('publicIpAddressType')]"
+                    },
+                    "publicIpAddressSku": {
+                        "value": "[variables('publicIpAddressSku')]"
+                    },
+                    "createNetworkSecurityGroup": {
+                        "value": "[variables('createNetworkSecurityGroup')]"
+                    },
+                    "networkSecurityGroupId": {
+                        "value": "[variables('networkSecurityGroupId')]"
+                    },
+                    "networkSecurityGroupRules": {
+                        "value": "[variables('networkSecurityGroupRules')]"
+                    },
+                    "networkInterfaceTags": {
+                        "value": "[variables('networkInterfaceTags')]"
+                    },
+                    "networkSecurityGroupTags": {
+                        "value": "[variables('networkSecurityGroupTags')]"
+                    },
+                    "publicIPAddressTags": {
+                        "value": "[variables('publicIPAddressTags')]"
+                    },
+                    "virtualMachineTags": {
+                        "value": "[variables('virtualMachineTags')]"
+                    },
+                    "imageTags": {
+                        "value": "[variables('imageTags')]"
+                    },
+                    "hostpoolToken": {
+                        "value": "[reference(parameters('hostpoolName')).registrationInfo.token]"
+                    },
+                    "hostpoolName": {
+                        "value": "[parameters('hostpoolName')]"
+                    },
+                    "domain": {
+                        "value": "[parameters('domainToJoin')]"
+                    },
+                    "ouPath": {
+                        "value": "[variables('ouPath')]"
+                    },
+                    "_guidValue": {
+                        "value": "[variables('deploymentId')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[variables('storageAccountName')]"
+                    },
+                    "installTeams": {
+                        "value": "[variables('installTeams')]"
+                    }
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]"
+        },
+        
+        {
+            "type": "Microsoft.Resources/deployments",
+            "condition": "[parameters('deployLogAnalytics')]",
+            "apiVersion": "2018-05-01",
+            "name": "[concat('LogAnalyticsWorkspace-', variables('deploymentId'))]",
+            "dependsOn": [
+                "[concat('linkedTemplate-O365PP-', variables('deploymentId'))]",
+                "[concat('linkedTemplate-', variables('deploymentId'))]",
+                "[concat('linkedTemplate-Server2016AD', variables('deploymentId'))]",
+                "[concat('linkedTemplate-Server2019AD', variables('deploymentId'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "[variables('LogAnalyticsTemplateUri')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "parameters": {
+                    "hostPoolName": {
+                        "value": "[parameters('hostpoolName')]"
+                    },
+                    "workspaceName": {
+                        "value": "[parameters('workSpaceName')]"
+                    },
+                    "rdshPrefix": {
+                        "value": "[variables('rdshPrefix')]"
+                    },
+                    "rdshNumberOfInstances": {
+                        "value": "[parameters('rdshNumberOfInstances')]"
+                    }
+                }
+            },
+            "resourceGroup": "[variables('resourceGroup')]"
+        }
+    ],
+    "outputs": {
+        "rdshVmNamesObject": {
+            "type": "Object",
+            "value": "[variables('rdshVmNamesOutput')]"
+        }
+    }
+}
