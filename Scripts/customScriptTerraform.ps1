@@ -1,11 +1,6 @@
 ﻿Param(
   [string] $storageAccountName,
-  [string] $ResourceGroupName,
-  [string] $administratorAccountUsername,
-  [string] $administratorAccountPassword,
-  [string] $SubscriptionId,
   [string] $installTeams
-
   )
 
 #create directory for log file
