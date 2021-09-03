@@ -94,7 +94,7 @@ catch{
 try{
 
     Add-Content C:\DeploymentLogs\log.txt "downloading storageAccountScript. exit code is: $LASTEXITCODE"
-    $Url = 'https://github.com/apcapodilupo/WVD_2020/blob/main/Scripts/JoinStorageAccount.zip?raw=true' 
+    $Url = 'https://github.com/acapodil/Azure-Virtual-Desktop/blob/main/Scripts/JoinStorageAccount.zip?raw=true' 
     Invoke-WebRequest -Uri $Url -OutFile "C:\JoinStorageAccount.zip"
     sleep 5
     Expand-Archive -Path "C:\JoinStorageAccount.zip" -DestinationPath "C:\JoinStorageAccount" -Force 
@@ -112,7 +112,7 @@ $connectionString = '\\' + $storageAccountName + '.file.core.windows.net\userpro
 try{
     Add-Content C:\DeploymentLogs\log.txt "Installing chocolatey. exit code is: $LASTEXITCODE"
     sleep 5
-    Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/apcapodilupo/WVD_2020/main/Scripts/install.ps1'))
+    Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/install.ps1'))
 }
 catch{
      Add-Content C:\DeploymentLogs\log.txt "Error downloading chocolatey package manager.Check the error log. Retrying... exit code is: $LASTEXITCODE"
