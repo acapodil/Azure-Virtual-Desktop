@@ -29,7 +29,7 @@
 # To bypass the use of any proxy, please set $env:chocolateyIgnoreProxy = 'true'
 
 #use a different location to download the chocolatey nupkg file (anthony's github)
-$env:chocolateyDownloadUrl = 'https://github.com/apcapodilupo/WVD_2020/blob/main/Scripts/chocolatey.0.10.15.nupkg?raw=true'
+$env:chocolateyDownloadUrl = 'https://github.com/acapodil/Azure-Virtual-Desktop/blob/main/Scripts/chocolatey.0.10.15.nupkg?raw=true'
 			      
                                        
 
