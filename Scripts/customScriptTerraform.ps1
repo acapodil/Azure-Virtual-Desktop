@@ -14,6 +14,7 @@ sleep 5
 
 #create initial log
 Add-Content C:\DeploymentLogs\log.txt "Starting Script. exit code is: $LASTEXITCODE"
+Add-Content C:\DeploymentLogs\log.txt "Install Teams is set to: $installTeams"
 sleep 5
 
 #set execution policy
