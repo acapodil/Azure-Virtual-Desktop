@@ -184,7 +184,7 @@ catch{
 }
 
 
-if ($installTeams -eq 'Yes'){
+if ($installTeams){
 
     Add-Content C:\DeploymentLogs\log.txt "Installing Teams. exit code is: $LASTEXITCODE"
 
