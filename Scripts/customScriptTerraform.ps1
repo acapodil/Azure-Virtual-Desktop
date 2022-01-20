@@ -1,7 +1,10 @@
 ﻿Param(
-  [string] $storageAccountName,
-  [bool] $installTeams
+  [string] $storageAccountName
   )
+
+
+#install teams flag (change as needed)
+$installTeams = true
 
 #create directory for log file
 New-Item -ItemType "directory" -Path C:\DeploymentLogs
