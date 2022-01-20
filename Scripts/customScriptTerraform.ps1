@@ -4,8 +4,8 @@
 
 
 #install teams flag (change as needed)
-$installTeams = true
-
+[bool]$installTeams = $true
+ 
 #create directory for log file
 New-Item -ItemType "directory" -Path C:\DeploymentLogs
 sleep 5
