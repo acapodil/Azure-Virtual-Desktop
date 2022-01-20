@@ -1,6 +1,6 @@
 ﻿Param(
   [string] $storageAccountName,
-  [string] $installTeams
+  [bool] $installTeams
   )
 
 #create directory for log file
