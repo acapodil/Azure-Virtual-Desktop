@@ -200,6 +200,8 @@ catch{
 
 }
 
+#install valley-benchmark
+choco install valley-benchmark
 
 if ($installTeams){
 
