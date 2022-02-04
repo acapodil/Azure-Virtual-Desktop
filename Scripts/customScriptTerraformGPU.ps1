@@ -201,7 +201,7 @@ catch{
 }
 
 #install valley-benchmark
-choco install valley-benchmark
+choco install heaven-benchmark -yes --ignore-checksums
 
 if ($installTeams){
 
