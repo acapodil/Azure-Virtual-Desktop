@@ -451,7 +451,7 @@
                 "autoUpgradeMinorVersion": true,
                 "settings": {
                     "fileUris": [
-                        "https://raw.githubusercontent.com/apcapodilupo/WVD_2020/main/Artifacts2021/Scripts/CustomScriptDOMAIN.ps1"
+                        "https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/CustomScriptDOMAIN.ps1"
                     ]
                 },
                 "protectedSettings": {
@@ -601,7 +601,7 @@
                 "typeHandlerVersion": "1.9",
                 "settings": {
                     "fileUris": [
-                        "https://raw.githubusercontent.com/apcapodilupo/WVD_2020/main/Artifacts2021/Scripts/CustomScriptDOMAIN.ps1"
+                        "https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/CustomScriptDOMAIN.ps1"
                     ],
                     "commandToExecute": "[variables('commandToExecute')]"
                 }
