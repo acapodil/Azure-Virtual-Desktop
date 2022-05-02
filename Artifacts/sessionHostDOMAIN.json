@@ -235,7 +235,7 @@
     },
     "variables": {
 
-        "artifactsLocation": "https://github.com/apcapodilupo/WVD_2020/blob/main/Artifacts2021/Scripts/DSC/Configuration_9-11-2020.zip?raw=true",
+        "artifactsLocation": "https://github.com/acapodil/Azure-Virtual-Desktop/blob/main/Scripts/DSC/Configuration_9-11-2020.zip?raw=true",
         "existingDomainUsername": "[first(split(parameters('administratorAccountUsername'), '@'))]",
         "domain": "[if(equals(parameters('domain'), ''), last(split(parameters('administratorAccountUsername'), '@')), parameters('domain'))]",
         "storageAccountType": "[parameters('rdshVMDiskType')]",
