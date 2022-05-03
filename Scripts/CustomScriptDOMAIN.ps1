@@ -163,6 +163,8 @@ sleep 10
 New-ITEMPROPERTY 'HKLM:\Software\FSLogix\Profiles' -Name VolumeType -PropertyType String -Value "vhdx"
 sleep 05
 
+#enable RDP shortpath Registry keys for UDP transport
+REG ADD "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" /v ICEControl /t REG_DWORD  /d 2 /f
 
 #Add Defender Exclusions for FSLogix
 try{
