@@ -35,5 +35,10 @@ invoke-WebRequest -Uri https://statics.teams.cdn.office.net/production-windows-x
 
 #Run Installs
 Start-Process -FilePath C:\Install\vc_redist.x64.exe -ArgumentList '/q', '/norestart'
+sleep 10
 msiexec /i C:\Install\MsRdcWebRTCSvc_HostSetup_1.0.2006.11001_x64.msi /q /n
+sleep 10
+
 msiexec /i "C:\Install\Teams_windows_x64.msi" /l*v c:\Install\Teams.log ALLUSER=1 ALLUSERS=1
+
+exit 0
