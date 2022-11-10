@@ -52,9 +52,11 @@ resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
   custom_rdp_properties    = "audiocapturemode:i:1;camerastoredirect:s:*;use multimon:i:0"
   start_vm_on_connect      = true
   maximum_sessions_allowed = 20
-  registration_info { #generates hostpool token
-    expiration_date = timeadd(timestamp(), "2h")
-  }
+}
+
+resource "azurerm_virtual_desktop_host_pool_registration_info" "hp_token" {
+  hostpool_id     = azurerm_virtual_desktop_host_pool.avdhppooled.id
+  expiration_date = timeadd(timestamp(), "2h")
 }
 
 #App Group (desktop)
@@ -94,34 +96,21 @@ resource "azurerm_virtual_desktop_workspace_application_group_association" "remo
   application_group_id = azurerm_virtual_desktop_application_group.remoteapp.id
 }
 
-#deploy log analytics workspace for insights
 
-resource "azurerm_template_deployment" "log" {
-  name                = "loganalytics"
-  resource_group_name = azurerm_resource_group.avd_rg.name
-
-  template_body = file("logAnalyticsConfig.json")
-
-  deployment_mode = "Incremental"
-  depends_on = [
-    azurerm_virtual_desktop_host_pool.avdhppooled,
-    azurerm_virtual_desktop_workspace.workspace
-  ]
-}
 
 # Deploy storage account for FSLogix
-resource "azurerm_template_deployment" "storage_account" {
-  name                = "storageaccount"
+resource "azurerm_storage_account" "storage_account" {
+  name                     = "storageaccount"
   resource_group_name = azurerm_resource_group.avd_rg.name
-
-  template_body = file("storageAccount.json")
-
-  deployment_mode = "Incremental"
-
+  location                 = azurerm_resource_group.avd_rg.location
+  account_tier             = "Premium"
+  account_replication_type = "LRS"
 }
 
-output "storageAccountName" {
-  value = azurerm_template_deployment.storage_account.outputs["storageAccountName"]
+resource "azurerm_storage_share" "file_share" {
+  name                 = "userprofiles"
+  storage_account_name = azurerm_storage_account.storage_account.name
+  quota                = 50
 }
 
 
