@@ -8,12 +8,12 @@ variable "rg-name" {
 
 variable "wkspace-name" {
   description = "The name of the WVD workspace to be created"
-  default     = ""
+  default     = "avd-wkspace"
 }
 
 variable "hppooled-name" {
   description = "The name of the WVD pooled hostpool to be created"
-  default     = ""
+  default     = "avd-hp"
 }
 
 variable "appgrp-name" {

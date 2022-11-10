@@ -226,7 +226,7 @@ resource "azurerm_virtual_machine_extension" "registersessionhost" {
 SETTINGS
 }
 
-#run VM extension for FSLOGIX
+#run VM extension for FSLOGIX on each session host deployed
 resource "azurerm_virtual_machine_extension" "custom_script" {
   name                 = "${var.vm_name}-${format("%02d", count.index)}-customscript"
   count                = var.vm_count
