@@ -35,6 +35,10 @@ variable "vm_size" {
   description = "Specifies the size of the virtual machine."
 }
 
+variable "image_vm_size" {
+  description = "Specifies the size of the Image virtual machine."
+}
+
 variable "image_publisher" {
   description = "Image Publisher"
 }
@@ -84,6 +88,11 @@ variable "vm_name" {
   description = "Session Host/VM Name:"
 }
 
+variable "image_vm_name" {
+  description = "Session Host/VM Name:"
+}
+
+
 variable "vm_count" {
   description = "Number of Session Host VMs to create:"
 }
@@ -123,5 +132,26 @@ variable "artifactslocation" {
 variable "installTeams" {
   type        = bool
   description = "Installs Teams. Enter true or false boolean value"
+}
 
+variable "imageVMCount" {
+  type        = bool
+  description = "Installs Teams. Enter true or false boolean value"
+  default     = false
+}
+
+variable "avd_users" {
+  description = "AVD users"
+  default     = []
+}
+
+variable "clientID" {
+  type = string
+}
+variable "clientSecret" {
+  type = string
+}
+
+variable "tenantID" {
+  type = string
 }

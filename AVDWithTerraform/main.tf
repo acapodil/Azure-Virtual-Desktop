@@ -1,6 +1,28 @@
+#terraform block
+# Terraform
+terraform {
+  required_providers {
+    azurerm = {
+      source = "hashicorp/azurerm"
+    }
+    azuread = {
+      source = "hashicorp/azuread"
+    }
+  }
+
+}
+
+#provider block
 provider "azurerm" {
+
+  subscription_id = var.subscriptionID
+  client_id       = var.clientID
+  client_secret   = var.clientSecret
+  tenant_id       = var.tenantID
+
   features {}
 }
+
 
 #Resource Group
 resource "azurerm_resource_group" "avd_rg" {
@@ -72,43 +94,6 @@ resource "azurerm_virtual_desktop_workspace_application_group_association" "remo
   application_group_id = azurerm_virtual_desktop_application_group.remoteapp.id
 }
 
-/* #Custom Role for 'Start VM on Connect' feature
-data "azurerm_subscription" "primary" { #this grabs subscriiption id info
-}
-
-data "azurerm_client_config" "start_vm_on_connect" {
-}
-
-#Role Definition for Start VM on connect
-resource "azurerm_role_definition" "start_vm_on_connect" {
-  name        = "Start VM on connect (Custom)"
-  scope       = data.azurerm_subscription.primary.id
-  description = "Start VM on connect (Custom)"
-
-  permissions {
-    actions = [
-      "Microsoft.Compute/virtualMachines/start/action",
-      "Microsoft.Compute/virtualMachines/read"
-    ]
-    not_actions = []
-  }
-
-  assignable_scopes = [
-    data.azurerm_subscription.primary.id, # /subscriptions/00000000-0000-0000-0000-000000000000
-  ]
-}
-
-#Custom Role Assignment
-resource "azurerm_role_assignment" "start_vm_on_connect" {
-
-  name                 = var.subscription_id
-  scope                = data.azurerm_subscription.primary.id
-  role_definition_name = azurerm_role_definition.start_vm_on_connect.name
-  principal_id         = data.azurerm_client_config.start_vm_on_connect.object_id
-  depends_on           = [azurerm_role_definition.start_vm_on_connect]
-
-}
- */
 #deploy log analytics workspace for insights
 
 resource "azurerm_template_deployment" "log" {
