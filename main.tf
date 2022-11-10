@@ -219,7 +219,7 @@ resource "azurerm_virtual_machine_extension" "registersessionhost" {
         "ConfigurationFunction" : "Configuration.ps1\\AddSessionHost",
         "Properties": {
             "hostPoolName": "${var.hostpoolname}",
-            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool.avdhppooled.registration_info[0].token}"
+            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool_registration_info.hp_token[0].token}"
         }
     }
 SETTINGS
