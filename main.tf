@@ -15,7 +15,7 @@ terraform {
 #provider block
 provider "azurerm" {
 
-  subscription_id = var.subscriptionID
+  subscription_id = var.subscription_id
   client_id       = var.clientID
   client_secret   = var.clientSecret
   tenant_id       = var.tenantID
