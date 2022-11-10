@@ -239,7 +239,7 @@ resource "azurerm_virtual_machine_extension" "custom_script" {
   settings = jsonencode({
 
     "fileUris" : ["https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/customScriptTerraform.ps1"]
-    "commandToExecute" : "powershell -ExecutionPolicy Unrestricted -File customScriptTerraform.ps1 ${azurerm_template_deployment.storage_account.outputs["storageAccountName"]} parameters('installTeams')"
+    "commandToExecute" : "powershell -ExecutionPolicy Unrestricted -File customScriptTerraform.ps1 ${azurerm_storage_account.storage_account.name} parameters('installTeams')"
   })
 
   tags = {
