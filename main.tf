@@ -9,15 +9,12 @@ terraform {
       source = "hashicorp/azuread"
     }
   }
-
 }
 
 #provider block
 provider "azurerm" {
-
   features {}
 }
-
 
 #Resource Group
 resource "azurerm_resource_group" "avd_rg" {
@@ -45,12 +42,12 @@ resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
   type                     = "Pooled"
   load_balancer_type       = "BreadthFirst"
   custom_rdp_properties    = "audiocapturemode:i:1;camerastoredirect:s:*;use multimon:i:0"
-  start_vm_on_connect      = true
+  start_vm_on_connect      = false
   maximum_sessions_allowed = 20
 }
 
-resource "azurerm_virtual_desktop_host_pool_registration_info" "hp_token" {
-    count                      = var.vm_count
+//Generates host pool token
+resource "azurerm_virtual_desktop_host_pool_registration_info" "reg_token" {
   hostpool_id     = azurerm_virtual_desktop_host_pool.avdhppooled.id
   expiration_date = timeadd(timestamp(), "2h")
 }
@@ -67,18 +64,6 @@ resource "azurerm_virtual_desktop_application_group" "desktopapp" {
   description   = "Dekstop Application Group"
 }
 
-#App Group (remoteApp)
-resource "azurerm_virtual_desktop_application_group" "remoteapp" {
-  name                = "${var.appgrp-name}-AppGroup"
-  location            = azurerm_resource_group.avd_rg.location
-  resource_group_name = azurerm_resource_group.avd_rg.name
-
-  type          = "RemoteApp"
-  host_pool_id  = azurerm_virtual_desktop_host_pool.avdhppooled.id
-  friendly_name = "${var.appgrp-name}-AppGroup"
-  description   = "Remote Application Group"
-}
-
 
 #Associate desktop group to workspace
 resource "azurerm_virtual_desktop_workspace_application_group_association" "workspaceremoteapp" {
@@ -86,27 +71,38 @@ resource "azurerm_virtual_desktop_workspace_application_group_association" "work
   application_group_id = azurerm_virtual_desktop_application_group.desktopapp.id
 }
 
-#Associate remote app group to workspace
-resource "azurerm_virtual_desktop_workspace_application_group_association" "remoteapp" {
-  workspace_id         = azurerm_virtual_desktop_workspace.workspace.id
-  application_group_id = azurerm_virtual_desktop_application_group.remoteapp.id
+#deploy log analytics workspace for insights
+resource "azurerm_log_analytics_workspace" "example" {
+  name                = "avdLog"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.avd_rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
 }
 
+#random string for storage account creation
+resource "random_string" "random" {
+  length  = 4
+  upper   = false
+  special = false
+}
 
-
-# Deploy storage account for FSLogix
-resource "azurerm_storage_account" "storage_account" {
-  name                     = "storageaccount"
-  resource_group_name = azurerm_resource_group.avd_rg.name
-  location                 = azurerm_resource_group.avd_rg.location
+#Storage Account
+resource "azurerm_storage_account" "storage" {
+  name                     = "${random_string.random.id}users"
+  resource_group_name      = azurerm_resource_group.avd_rg.name
+  location                 = var.location
   account_tier             = "Premium"
   account_replication_type = "LRS"
+  account_kind             = "FileStorage"
 }
 
-resource "azurerm_storage_share" "file_share" {
+#create SMB Share
+resource "azurerm_storage_share" "FSShare" {
   name                 = "userprofiles"
-  storage_account_name = azurerm_storage_account.storage_account.name
-  quota                = 50
+  quota                = "150"
+  storage_account_name = azurerm_storage_account.storage.name
+  depends_on           = [azurerm_storage_account.storage]
 }
 
 
@@ -215,13 +211,13 @@ resource "azurerm_virtual_machine_extension" "registersessionhost" {
         "ConfigurationFunction" : "Configuration.ps1\\AddSessionHost",
         "Properties": {
             "hostPoolName": "${var.hostpoolname}",
-            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool_registration_info.hp_token[0].token}"
+            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool_registration_info.reg_token[0].token}"
         }
     }
 SETTINGS
 }
 
-#run VM extension for FSLOGIX on each session host deployed
+#run custom script extension for FSLOGIX
 resource "azurerm_virtual_machine_extension" "custom_script" {
   name                 = "${var.vm_name}-${format("%02d", count.index)}-customscript"
   count                = var.vm_count
@@ -234,12 +230,122 @@ resource "azurerm_virtual_machine_extension" "custom_script" {
   settings = jsonencode({
 
     "fileUris" : ["https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/customScriptTerraform.ps1"]
-    "commandToExecute" : "powershell -ExecutionPolicy Unrestricted -File customScriptTerraform.ps1 ${azurerm_storage_account.storage_account.name} parameters('installTeams')"
+    "commandToExecute" : "powershell -ExecutionPolicy Unrestricted -File customScriptTerraform.ps1 ${azurerm_storage_account.storage.name}"
   })
 
   tags = {
     environment = "Production"
   }
 }
+
+
+#Deploy Image VM#############################
+
+#build Session Host NIC
+resource "azurerm_network_interface" "imagevm_nic" {
+  name                = "${var.image_vm_name}-NIC"
+  location            = azurerm_resource_group.avd_rg.location
+  resource_group_name = azurerm_resource_group.avd_rg.name
+  depends_on = [
+    azurerm_virtual_machine_extension.custom_script
+  ]
+  ip_configuration {
+    name                          = "imgvmipconfig"
+    subnet_id                     = "/subscriptions/${var.subscription_id}/resourceGroups/${var.domain_controller_rg}/providers/Microsoft.Network/virtualNetworks/${var.domain_controller_vnet}/subnets/${var.domain_controller_subnet}"
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+# #Build Image VM
+resource "azurerm_virtual_machine" "image_vm" {
+  name                          = var.image_vm_name
+  location                      = azurerm_resource_group.avd_rg.location
+  resource_group_name           = azurerm_resource_group.avd_rg.name
+  vm_size                       = var.image_vm_size
+  network_interface_ids         = [azurerm_network_interface.imagevm_nic.id]
+  delete_os_disk_on_termination = true
+  depends_on                    = [azurerm_network_interface.imagevm_nic]
+
+
+  storage_image_reference {
+    publisher = var.image_publisher
+    offer     = var.image_offer
+    sku       = var.image_sku
+    version   = var.image_version
+  }
+
+  storage_os_disk {
+    name          = "${var.image_vm_name}-OSD"
+    create_option = "FromImage"
+  }
+
+  os_profile {
+    computer_name  = var.image_vm_name
+    admin_username = var.admin_username
+    admin_password = var.admin_password
+  }
+
+  os_profile_windows_config {
+    provision_vm_agent = true
+  }
+}
+
+#auto shutdown imageVM
+resource "azurerm_dev_test_global_vm_shutdown_schedule" "auto_shutdown_imageVM" {
+  location              = azurerm_resource_group.avd_rg.location
+  virtual_machine_id    = azurerm_virtual_machine.image_vm.id
+  enabled               = true
+  daily_recurrence_time = var.vm_shutdown_time
+  timezone              = "Eastern Standard Time"
+
+  notification_settings {
+    enabled = false
+  }
+}
+
+# #Domain-join IMG VM
+resource "azurerm_virtual_machine_extension" "imageVM_domainjoin" {
+  name                 = "join-domain"
+  virtual_machine_id   = azurerm_virtual_machine.image_vm.id
+  publisher            = "Microsoft.Compute"
+  type                 = "JsonADDomainExtension"
+  type_handler_version = "1.0"
+  depends_on           = [azurerm_virtual_machine.image_vm]
+
+  settings = <<SETTINGS
+    {
+        "Name": "${var.domain}",
+        "User": "${var.domainuser}",
+        "Restart": "true",
+        "Options": "3"
+    }
+SETTINGS
+
+  protected_settings = <<PROTECTED_SETTINGS
+    {
+        "Password": "${var.domainpassword}"
+    }
+PROTECTED_SETTINGS
+}
+
+resource "azurerm_virtual_machine_extension" "image_vm_custom_script" {
+  name                 = "${var.image_vm_name}-customscript"
+  virtual_machine_id   = azurerm_virtual_machine.image_vm.id
+  publisher            = "Microsoft.Compute"
+  type                 = "CustomScriptExtension"
+  type_handler_version = "1.10"
+  depends_on           = [azurerm_virtual_machine_extension.imageVM_domainjoin]
+
+  settings = jsonencode({
+
+    "fileUris" : ["https://raw.githubusercontent.com/acapodil/Azure-Virtual-Desktop/main/Scripts/customScriptTerraform.ps1"]
+    "commandToExecute" : "powershell -ExecutionPolicy Unrestricted -File customScriptTerraform.ps1 ${azurerm_storage_account.storage.name}"
+  })
+
+  tags = {
+    environment = "Production"
+  }
+}
+
 
 
