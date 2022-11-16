@@ -33,6 +33,7 @@ resource "azurerm_virtual_desktop_workspace" "workspace" {
   description   = "Workspace deployed using Terraform"
 }
 
+
 #Hostpool
 resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
   name                = var.hppooled-name
@@ -48,6 +49,7 @@ resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
 
 //Generates host pool token
 resource "azurerm_virtual_desktop_host_pool_registration_info" "reg_token" {
+  count           = var.vm_count
   hostpool_id     = azurerm_virtual_desktop_host_pool.avdhppooled.id
   expiration_date = timeadd(timestamp(), "2h")
 }
