@@ -33,7 +33,6 @@ resource "azurerm_virtual_desktop_workspace" "workspace" {
   description   = "Workspace deployed using Terraform"
 }
 
-
 #Hostpool
 resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
   name                = var.hppooled-name
@@ -49,7 +48,7 @@ resource "azurerm_virtual_desktop_host_pool" "avdhppooled" {
 
 //Generates host pool token
 resource "azurerm_virtual_desktop_host_pool_registration_info" "reg_token" {
-  count           = var.vm_count
+  #count           = var.vm_count
   hostpool_id     = azurerm_virtual_desktop_host_pool.avdhppooled.id
   expiration_date = timeadd(timestamp(), "2h")
 }
@@ -97,6 +96,10 @@ resource "azurerm_storage_account" "storage" {
   account_tier             = "Premium"
   account_replication_type = "LRS"
   account_kind             = "FileStorage"
+  # network_rules {
+  #   default_action             = "Deny"
+  #   virtual_network_subnet_ids = ["/subscriptions/${var.subscription_id}/resourceGroups/${var.domain_controller_rg}/providers/Microsoft.Network/virtualNetworks/${var.domain_controller_vnet}/subnets/${var.domain_controller_subnet}"]
+  # }
 }
 
 #create SMB Share
@@ -213,11 +216,13 @@ resource "azurerm_virtual_machine_extension" "registersessionhost" {
         "ConfigurationFunction" : "Configuration.ps1\\AddSessionHost",
         "Properties": {
             "hostPoolName": "${var.hostpoolname}",
-            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool_registration_info.reg_token[0].token}"
+            "registrationInfoToken": "${azurerm_virtual_desktop_host_pool_registration_info.reg_token.token}"
         }
     }
 SETTINGS
 }
+
+//"${azurerm_virtual_desktop_host_pool_registration_info.reg_token[count.index]}"
 
 #run custom script extension for FSLOGIX
 resource "azurerm_virtual_machine_extension" "custom_script" {
