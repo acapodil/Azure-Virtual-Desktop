@@ -176,11 +176,12 @@ try{
     powershell -Command "Add-MpPreference -ExclusionExtension '%TEMP%\*.VHDX’"
     powershell -Command "Add-MpPreference -ExclusionExtension '%Windir%\*.VHD’"
     powershell -Command "Add-MpPreference -ExclusionExtension '%Windir%\*.VHDX’"
-    powershell -Command "Add-MpPreference -ExclusionExtension '\\gcrwvduserprofiles.file.core.windows.net\userprofiles\*\*.*.VHDX’"
-    powershell -Command "Add-MpPreference -ExclusionExtension '\\gcrwvduserprofiles.file.core.windows.net\userprofiles\*\*.*.VHD’"
+    powershell -Command "Add-MpPreference -ExclusionExtension '\\$storageAccountName.file.core.windows.net\userprofiles\*\*.*.VHDX’"
+    powershell -Command "Add-MpPreference -ExclusionExtension '\\$storageAccountName.file.core.windows.net\userprofiles\*\*.*.VHD’"
     powershell -Command "Add-MpPreference -ExclusionProcess '%Program Files%\FSLogix\Apps\frxccd.exe’"
     powershell -Command "Add-MpPreference -ExclusionProcess '%Program Files%\FSLogix\Apps\frxccds.exe’"
     powershell -Command "Add-MpPreference -ExclusionProcess '%Program Files%\FSLogix\Apps\frxsvc.exe’"
+    Add-Content C:\DeploymentLogs\log.txt "Defender Exclusions for FSLogix successful! Storage account used is:$storageAccountName Current exit code is: $LASTEXITCODE"
 
 
 }
